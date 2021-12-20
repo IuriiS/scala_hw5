@@ -1,5 +1,6 @@
 package module4.homework.services
 
+import cats.free.Free
 import zio.Has
 import zio.Task
 import module4.homework.dao.entity.User
@@ -17,6 +18,7 @@ import module4.homework.dao.entity.UserToRole
 import zio.ZLayer
 import zio.macros.accessible
 import module4.homework.dao.entity.RoleCode
+import module4.homework.dao.repository.UserRepository.UserRepository
 
 @accessible
 object UserService{
@@ -39,16 +41,36 @@ object UserService{
              users <- userRepo.list().transact(transactor)
         } yield users
 
-        def listUsersDTO(): RIO[DBTransactor,List[UserDTO]] = ???
-        
-        def addUserWithRole(user: User, roleCode: RoleCode): RIO[DBTransactor,UserDTO] = ???
-        
-        def listUsersWithRole(roleCode: RoleCode): RIO[DBTransactor,List[UserDTO]] = ???
-        
-        
+        def listUsersDTO(): RIO[DBTransactor,List[UserDTO]] = for {
+            transactor <- DBTransactor.dbTransactor
+            users <- userRepo.list().transact(transactor)
+            usersDTO <- ZIO.foreach(users)(user => userRepo.userRoles(user.typedId).transact(transactor).map( roles => UserDTO(user, roles.toSet)))
+        } yield usersDTO
+
+        def addUserWithRole(user: User, roleCode: RoleCode): RIO[DBTransactor,UserDTO] =  for {
+            transactor <- DBTransactor.dbTransactor
+            query = for {
+                createdUser <- userRepo.createUser(user)
+                _ <- userRepo.insertRoleToUser(roleCode, createdUser.typedId)
+                userRoles <- userRepo.userRoles(createdUser.typedId)
+            } yield (UserDTO(createdUser, userRoles.toSet))
+            res <- query.transact(transactor)
+        } yield res
+
+        def listUsersWithRole(roleCode: RoleCode): RIO[DBTransactor,List[UserDTO]] = for {
+            transactor <- DBTransactor.dbTransactor
+            users <- userRepo.listUsersWithRole(roleCode).transact(transactor)
+            usersDTO <- ZIO.foreach(users)( user => {
+                for {
+                    userRoles <- userRepo.userRoles(user.typedId).transact(transactor)
+                } yield UserDTO(user, userRoles.toSet)
+            })
+        } yield usersDTO
+
     }
 
-    val live: ZLayer[UserRepository.UserRepository, Nothing, UserService] = ???
+    val live: ZLayer[UserRepository.UserRepository, Nothing, UserService.UserService] =
+        ZLayer.fromService[UserRepository.Service, UserService.Service]((userRepo => new Impl(userRepo)))
 }
 
 case class UserDTO(user: User, roles: Set[Role])

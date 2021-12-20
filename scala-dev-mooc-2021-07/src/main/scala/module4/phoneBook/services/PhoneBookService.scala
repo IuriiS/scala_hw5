@@ -43,7 +43,7 @@ object PhoneBookService {
 
         def insert(phoneRecord: PhoneRecordDTO): RIO[DBTransactor with Random, String] = for{
           transactor <- DBTransactor.dbTransactor
-          uuid <- zio.random.nextUUID.map(_.toString())
+          uuid: String <- zio.random.nextUUID.map(_.toString())
           uuid2 <- zio.random.nextUUID.map(_.toString())
           address = Address(uuid, phoneRecord.zipCode, phoneRecord.address)
           query = for{
@@ -51,7 +51,7 @@ object PhoneBookService {
              _ <- phoneRecordRepository.insert(PhoneRecord(uuid2, phoneRecord.phone, phoneRecord.fio, address.id))
                   
           } yield ()
-         
+
           _  <-  query.transact(transactor)
         } yield uuid
         
